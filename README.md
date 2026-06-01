@@ -7,4 +7,4 @@ The file adfærdsanalyse.rmd indcludes the bahavioral analysis i R. Analysis inc
 
 The file x.ipynb includes the EEG analysis, visualization and in general all relevant processing of EEG data for the experiment in Python
 
-The file x.m indcludes the processing and analysis of the data found in the open science project 'N400' by Kappenman et al 2020, in MATLAB.
+The file N400_analyse.m indcludes the processing and analysis of the data found in the open science project 'N400' by Kappenman et al 2020, in MATLAB.
