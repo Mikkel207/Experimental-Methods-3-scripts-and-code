@@ -1,5 +1,5 @@
 # Experimental-Methods-3-scripts-and-code
-This repository consists of the relevant .py, .rmd, .ipynb and .m scripts for the experiment: Broadening the understandig of the N400-signal: The Influence of
+This repository consists of the relevant .py, .rmd, .ipynb and .m scripts for the experiment: Broadening our understandig of the N400-signal: The Influence of
 Context and Semantic Similarity in a Word Discrepancy Task by Nikolaj Stribæk, Bertram Blohm and Mikkel Hart-Hansen.
 
 The file em3_final_version.py includes the experiment used when collecting data. Can be run using psychoPy.
