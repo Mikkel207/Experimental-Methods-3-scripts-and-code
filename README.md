@@ -6,6 +6,6 @@ The file em3_final_version.py includes the experiment used when collecting data.
 
 The file adfærdsanalyse.rmd indcludes the bahavioral analysis i R. Analysis included in the report, and extra analysis (including cohens d and Bayes factor) can be found.
 
-The file x.ipynb includes the EEG analysis, visualization and in general all relevant processing of EEG data for the experiment in Python
+The file EM2_EEG_analysis.ipynb includes the EEG analysis, visualization and in general all relevant processing of EEG data for the experiment in Python
 
 The file N400_analyse.m indcludes the processing and analysis of the data found in the open science project 'N400' by Kappenman et al 2020, in MATLAB.
