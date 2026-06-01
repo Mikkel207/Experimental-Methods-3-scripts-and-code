@@ -1,0 +1,987 @@
+---
+title: "adfærdsanalyse"
+format: html
+editor: visual
+---
+
+## Adfærdsanalyse af adfærdsdata for EM3 forsøget
+
+Formålet med denne dataanalyse er at undersøge de adfærdsmæssige mål *reacktionstid **rt*** og *korrekthed **correct*** for forsøget. Vi skal altså undersøge om der er sammenhæng mellem de adfærdsmæssige mål/de afhængige variable og de ufhængige variable *sværhedsgrad **difficulty*** og *den semantiske outliers position **outlier_posistion***
+
+### **DATAINDLÆSNING OG CLEANING**
+
+Vi starter med at loade de libraries vi skal bruge
+
+```{r}
+#vi tilføjer flere løbende som de giver mening
+
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(ggeffects)
+library(ggplot2)
+library(ggsignif)
+library(gt)
+library(effectsize)
+library(BayesFactor)
+library(emmeans)
+```
+
+Vi indlæser vores data og grupperer data i de variable vi vil arbejde med
+
+```{r}
+#vi loader .csv filerne 
+
+data_mappe <- "C:/Users/winth/Documents/KDV/4.semester/EM3/DYOE/data"
+csv_filer <- list.files(path = data_mappe, 
+                        pattern = "*.csv", 
+                        full.names = TRUE)
+df <- map_dfr(csv_filer, read_csv)
+
+```
+
+Vi samler de forskellige varibale vi vil kigge på i faktorer
+
+```{r}
+ df$difficulty <- factor(df$difficulty,
+                         levels = c("coarse", "medium", "fine"))
+
+ df$outlier_position <- factor(df$outlier_position)
+
+ df$participant_id <- factor(df$participant_id)
+```
+
+Vi laver et dataframe for reaktionstid hvor kun korrekte svar medtages. Hvorfor? Det er fair at antage at i de trials hvor deltagere svarer forkert, har de ikke opfanget den semantiske outlier, og der har derfor vil ikke været noget n400 signal.
+
+```{r}
+ df_rt <- df %>%
+   filter(correct == 1)
+ #432 obs - 351 obs = 81 obs (hvor deltagerne svarede forkert)
+```
+
+### **DeskrIptiv statitsik for hver afhængig variabel (rt og accuracy) udfra de uafhængige variable (difficulty og outlier_position) PÅ GRUPPENIVEAU**
+
+```{r}
+#mean RT pr difficulty
+rt_difficulty <- df_rt %>%
+   group_by(difficulty) %>%
+   summarise(
+     mean_rt = mean(rt),
+     sd_rt = sd(rt),
+     se_rt = sd(rt) /sqrt(n()),
+     n = n()
+   )
+
+ rt_difficulty
+ 
+```
+
+```{r}
+#accuracy pr difficulty
+ accuracy_difficulty <- df %>%
+   group_by(difficulty) %>%
+   summarise(
+     accuracy = mean(correct) * 100,
+     sd_acc = sd(correct) * 100,
+     se_acc = (sd(correct) / sqrt(n())) * 100,
+     n = n()
+   )
+
+ accuracy_difficulty
+```
+
+```{r}
+#RT pr. outlier-position
+ rt_position <- df_rt %>%
+   group_by(outlier_position) %>%
+   summarise(
+     mean_rt = mean(rt),
+     sd_rt = sd(rt),
+     se_rt = sd(rt) / sqrt(n()),
+     n = n()
+   )
+
+ rt_position
+```
+
+```{r}
+#Accuracy pr. outlier-position
+ accuracy_position <- df %>%
+   group_by(outlier_position) %>%
+   summarise(
+     accuracy = mean(correct) * 100,
+     sd_acc = sd(correct) * 100,
+     se_acc = (sd(correct) / sqrt(n())) * 100,
+     n = n()
+   )
+
+ accuracy_position
+```
+
+PÆN TABEL for GRUPPE STATISTIK
+
+```{r}
+### GROUP LEVEL SUMMARY TABLE
+
+#Difficulty
+summary_difficulty <- rt_difficulty %>%
+  left_join(
+    accuracy_difficulty,
+    by = "difficulty"
+  ) %>%
+  transmute(
+    Analysis = "Difficulty",
+    Level = difficulty,
+    mean_rt,
+    sd_rt,
+    se_rt,
+    accuracy,
+    sd_acc,
+    se_acc
+  )
+
+#Outlier position
+summary_position <- rt_position %>%
+  left_join(
+    accuracy_position,
+    by = "outlier_position"
+  ) %>%
+  transmute(
+    Analysis = "Outlier position",
+    Level = outlier_position,
+    mean_rt,
+    sd_rt,
+    se_rt,
+    accuracy,
+    sd_acc,
+    se_acc
+  )
+
+#Combine
+summary_group <- bind_rows(
+  summary_difficulty,
+  summary_position
+) %>%
+  mutate(
+    mean_rt = round(mean_rt, 3),
+    sd_rt = round(sd_rt, 3),
+    se_rt = round(se_rt, 3),
+    accuracy = round(accuracy, 1),
+    sd_acc = round(sd_acc, 1),
+    se_acc = round(se_acc, 1)
+  )
+
+#Table
+tab_group_level <- summary_group %>%
+  gt(groupname_col = "Analysis") %>%
+  tab_header(
+    title = "Descriptive measures: Group level"
+  ) %>%
+  cols_label(
+    Level = "Condition",
+    mean_rt = "Mean RT (s)",
+    sd_rt = "SD RT",
+    se_rt = "SE RT",
+    accuracy = "Accuracy (%)",
+    sd_acc = "SD Accuracy",
+    se_acc = "SE Accuracy"
+  )
+
+gtsave(
+  data = tab_group_level,
+  filename = "tab_group_level.png"
+)
+tab_group_level
+```
+
+### **ANALYSE PÅ INDIVIDNIVEAU**
+
+```{r}
+#RT pr deltager og difficulty
+ participant_rt <- df_rt %>%
+   group_by(participant_id, difficulty) %>%
+   summarise(
+     mean_rt = mean(rt),
+     sd_rt = sd(rt),
+     se_rt = sd(rt) / sqrt(n()),
+     .groups = "drop"
+   )
+
+ participant_rt
+```
+
+```{r}
+#accuracy per deltager & difficulty
+ participant_acc <- df %>%
+   group_by(participant_id, difficulty) %>%
+   summarise(
+     accuracy = mean(correct) * 100,
+     sd_acc = sd(correct) * 100,
+     se_acc = (sd(correct) / sqrt(n())) * 100,
+     .groups = "drop"
+   )
+
+ participant_acc
+```
+
+PÆN TABEL for INDIVIDER
+
+```{r}
+### INDIVIDNIVEAU
+
+#Difficulty
+participant_difficulty <- participant_rt %>%
+  left_join(
+    participant_acc,
+    by = c("participant_id", "difficulty")
+  ) %>%
+  transmute(
+    participant_id,
+    Analysis = "Difficulty",
+    Level = difficulty,
+    mean_rt,
+    sd_rt,
+    se_rt,
+    accuracy,
+    sd_acc,
+    se_acc
+  )
+
+#Outlier position RT
+participant_rt_position <- df_rt %>%
+  group_by(participant_id, outlier_position) %>%
+  summarise(
+    mean_rt = mean(rt),
+    sd_rt = sd(rt),
+    se_rt = sd(rt)/sqrt(n()),
+    .groups = "drop"
+  )
+
+#Outlier position Accuracy
+participant_acc_position <- df %>%
+  group_by(participant_id, outlier_position) %>%
+  summarise(
+    accuracy = mean(correct)*100,
+    sd_acc = sd(correct)*100,
+    se_acc = (sd(correct)/sqrt(n()))*100,
+    .groups = "drop"
+  )
+
+participant_position <- participant_rt_position %>%
+  left_join(
+    participant_acc_position,
+    by = c("participant_id", "outlier_position")
+  ) %>%
+  transmute(
+    participant_id,
+    Analysis = "Outlier position",
+    Level = outlier_position,
+    mean_rt,
+    sd_rt,
+    se_rt,
+    accuracy,
+    sd_acc,
+    se_acc
+  )
+
+#Combine
+participant_summary <- bind_rows(
+  participant_difficulty,
+  participant_position
+) %>%
+  mutate(
+    mean_rt = round(mean_rt, 3),
+    sd_rt = round(sd_rt, 3),
+    se_rt = round(se_rt, 3),
+    accuracy = round(accuracy, 1),
+    sd_acc = round(sd_acc, 1),
+    se_acc = round(se_acc, 1)
+  )
+
+#Table
+tab_indv_level <- participant_summary %>%
+  gt(groupname_col = "Analysis") %>%
+  tab_header(
+    title = "Descriptive measures: Individual level"
+  ) %>%
+  cols_label(
+    participant_id = "Participant",
+    Level = "Condition",
+    mean_rt = "Mean RT (s)",
+    sd_rt = "SD RT",
+    se_rt = "SE RT",
+    accuracy = "Accuracy (%)",
+    sd_acc = "SD Accuracy",
+    se_acc = "SE Accuracy"
+  )
+gtsave(
+  data = tab_indv_level,
+  filename = "tab_indv_level.png"
+)
+tab_indv_level
+```
+
+### ANALYSE AF SIGNIFIKANS
+
+```{r}
+#MIXED-EFFECTS-MODEL for RT
+ model_rt <- lmer(
+   rt ~ difficulty + outlier_position +
+     (1 | participant_id),
+   data = df_rt
+ )
+
+ summary(model_rt)
+```
+
+#### kort analyse og forklaring Mixed-effectsmodel for rt
+
+Vi kigger først på modellen random-effects. Her aflæser vi at variansen mellem reationstider for deltagerene har en varians på 1.344. Dvs at baselinereationstiden for hver deltager varierer en hel del. det ser vi også på plottet for reationstid for hver deltager.
+
+Når vi kigger på fixed-effects kigger vi på gruppenivaue med sværhedsgrad coarse og putlier position 4 som referenceværdier for de afhængige variabelseffekter.
+
+Vi kan konkludere følgende
+
+-   Der er signifikans (p\>0.01) for forskel mellem coarse og medium - og et estimat på det tager i gennemsnit 0.7 sekunder længere at svare
+
+-   der er stor signifikans (p\>0.001) for forskel mellem coarse og fine - og et estimat på at det tager i gennemsnit ca. 2 sekunder længere at svare
+
+<!-- -->
+
+-   vi ser ingen signifikans for at positionen for outlieren har en effekt på reaktionstiden
+
+```{r}
+#MIXED EFFECTS MODEL for accuracy
+ model_acc <- lmer(
+   correct ~ difficulty + outlier_position +
+     (1 | participant_id),
+   data = df
+ )
+
+ summary(model_acc)
+```
+
+#### Vi laver modeller med medium som reference i stedet for coarse
+
+```{r}
+model_rt_medref <- lmer(
+  rt ~ relevel(difficulty, ref = "medium") + outlier_position +
+       (1 | participant_id),
+  data = df_rt
+)
+summary(model_rt_medref)
+```
+
+Vigtigste observation er at der også er signifikans (p\>0.001) mellem medium og fine med et estimat på at det tager 1.3 sekunder mere at svare.
+
+```{r}
+model_acc_medref <- lmer(
+  correct ~ relevel(difficulty, ref = "medium") +
+            outlier_position +
+            (1 | participant_id),
+  data = df,
+)
+summary(model_acc_medref)
+```
+
+Igen er vigtigste observation signifikans (p\>0.001) mellem medium og fine.
+
+### Plots med signifikans stjerner
+
+```{r}
+#barplot for reaktionstid
+barplotRT <- ggplot(df_rt,
+       aes(x = difficulty,
+           y = rt,
+           fill = difficulty)) +
+
+  stat_summary(fun = mean,
+               geom = "bar",
+               color = "black",
+               width = 0.8) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.2) +
+
+  geom_signif(
+    comparisons = list(
+      c("coarse", "medium"),
+      c("coarse", "fine"),
+      c("medium", "fine")
+    ),
+    annotations = c("*", "***", "***"),
+    y_position = c(1.5, 2.3, 3.1),
+    tip_length = 0.010,
+    textsize = 6
+  ) +
+
+  scale_fill_manual(values = c(
+    "#6BAED6",
+    "#74C476",
+    "#FD8D3C"
+  )) +
+  
+  scale_y_continuous(
+    breaks = c(0,1,2,3,4),
+  ) +
+  
+  coord_cartesian(
+    ylim = c(0,4.5),
+    clip = 'off'
+  ) +
+
+  labs(
+    x = "Difficulty",
+    y = "Reaction time (s)"
+  ) +
+
+  theme_minimal(base_size = 14) +
+
+  theme(
+    legend.position = "none",
+    axis.title = element_text(face = "bold"),
+    plot.margin = margin(20,20,40,20)
+  )
+
+#Vi gemmer plottet som .png
+ggsave(
+  filename = "barplotRT.png",
+  plot = barplotRT,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+barplotRT
+```
+
+```{r}
+#barplot for accuracy med signikans
+barplotACC <- ggplot(df,
+       aes(x = difficulty,
+           y = correct,
+           fill = difficulty)) +
+
+  stat_summary(fun = mean,
+               geom = "bar",
+               color = "black",
+               width = 0.8) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.2) +
+
+  geom_signif(
+    comparisons = list(
+      c("coarse", "medium"),
+      c("coarse", "fine"),
+      c("medium", "fine")
+    ),
+    annotations = c("ns", "***", "***"),
+    y_position = c(1.01, 1.08, 1.15),
+    tip_length = 0.010,
+    textsize = 6
+  ) +
+
+  scale_fill_manual(values = c(
+    "#6BAED6",
+    "#74C476",
+    "#FD8D3C"
+  )) +
+
+  scale_y_continuous(
+  labels = scales::percent_format(accuracy = 1),
+  breaks = c(0,0.25,0.5,0.75,1.0)
+  ) +
+
+  coord_cartesian(
+    ylim = c(0, 1.20),
+    clip = "off"
+  ) +
+
+  labs(
+    x = "Difficulty",
+    y = "Accuracy (%)"
+  ) +
+
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(face = "bold")
+  )
+
+#Vi gemmer plotter som .png
+ggsave(
+  filename = "barplotACC.png",
+  plot = barplotACC,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+barplotACC
+```
+
+### Pæne plots på individnivaeu
+
+```{r}
+#individplot for RT
+indvplotRT_diff <- ggplot(df_rt,
+       aes(x = difficulty,
+           y = rt,
+           color = participant_id,
+           group = participant_id)) +
+
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1.2) +
+
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 4) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.1) +
+
+  scale_color_manual(values = c(
+    "#1F77B4",
+    "#2CA02C",
+    "#D62728"
+  )) +
+
+  labs(
+    x = "Difficulty",
+    y = "Reaction time (s)",
+    color = "Participant"
+  ) +
+
+  theme_minimal(base_size = 14) +
+
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(face = "bold")
+  )
+#Vi gemmer plotter som .png
+ggsave(
+  filename = "indvplotRT_diff.png",
+  plot = indvplotRT_diff,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+indvplotRT_diff
+```
+
+```{r}
+#individplot for accuracy
+indvplotACC_diff <- ggplot(df,
+       aes(x = difficulty,
+           y = correct,
+           color = participant_id,
+           group = participant_id)) +
+
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1.2) +
+
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 4) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.1) +
+
+  scale_color_manual(values = c(
+    "#1F77B4",
+    "#2CA02C",
+    "#D62728"
+  )) +
+
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    breaks = c(0,0.25,0.5,0.75,1)
+  ) +
+
+  labs(
+    x = "Difficulty",
+    y = "Accuracy (%)",
+    color = "Participant"
+  ) +
+
+  theme_minimal(base_size = 14) +
+
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(face = "bold")
+  )
+#Vi gemmer plotter som .png
+ggsave(
+  filename = "indvplotACC_diff.png",
+  plot = indvplotACC_diff,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+indvplotACC_diff
+```
+
+```{r}
+#PLOTS FOR INDIVIDER IFT OUTLIER_POSITION. SKAL BRUGES TIL AT UNDERSTREGE AT DELTAGERNE IKKE FØLGER SAMME TENDENS
+indvplotACC_outlierpos <- ggplot(df,
+       aes(x = outlier_position,
+           y = correct,
+           color = participant_id,
+           group = participant_id)) +
+
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1.2) +
+
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 4) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.1) +
+
+  scale_color_manual(values = c(
+    "#1F77B4",
+    "#2CA02C",
+    "#D62728"
+  )) +
+
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1)
+  ) +
+
+  labs(
+    x = "Outlier position",
+    y = "Accuracy (%)",
+    color = "Participant"
+  ) +
+
+  theme_minimal(base_size = 14) +
+
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(face = "bold")
+  )
+#Vi gemmer plotter som .png
+ggsave(
+  filename = "indvplotACC_outlierpos.png",
+  plot = indvplotACC_outlierpos,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+indvplotACC_outlierpos
+
+indvplotRT_outlierpos <- ggplot(df_rt,
+       aes(x = outlier_position,
+           y = rt,
+           color = participant_id,
+           group = participant_id)) +
+
+  stat_summary(fun = mean,
+               geom = "line",
+               linewidth = 1.2) +
+
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 4) +
+
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar",
+               width = 0.1) +
+
+  scale_color_manual(values = c(
+    "#1F77B4",
+    "#2CA02C",
+    "#D62728"
+  )) +
+
+  labs(
+    x = "Outlier position",
+    y = "Reaction time (s)",
+    color = "Participant"
+  ) +
+
+  theme_minimal(base_size = 14) +
+
+  theme(
+    plot.title = element_text(
+      face = "bold",
+      hjust = 0.5
+    ),
+    axis.title = element_text(face = "bold")
+  )
+
+#Vi gemmer plotter som .png
+ggsave(
+  filename = "indvplotRT_outlierpos.png",
+  plot = indvplotRT_outlierpos,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+indvplotRT_outlierpos
+```
+
+#### logistisk regression for fine trials for at se om forskellen mellem deltagere er signifikant
+
+```{r}
+# Only fine trials
+df_fine <- df %>%
+  filter(difficulty == "fine")
+
+# Test whether participant predicts accuracy
+model_fine_acc <- glm(
+  correct ~ participant_id,
+  data = df_fine,
+  family = binomial
+)
+summary(model_fine_acc)
+
+emmeans(model_fine_acc,
+        pairwise ~ participant_id,
+        type = "response",
+        adjust = "holm")
+```
+
+#### cohens d på gruppenivaue
+
+Vi skal åbenbart ligeførst have lavet nogle mean dataframes som er anderledes end dem vi har i forvejen
+
+```{r}
+# Mean RT per participant per condition
+rt_means <- df_rt %>%
+  group_by(participant_id, difficulty) %>%
+  summarise(mean_rt = mean(rt),
+            .groups = "drop") %>%
+  pivot_wider(
+    names_from = difficulty,
+    values_from = mean_rt
+  )
+
+# Cohen's d: coarse vs medium
+cohens_d(
+  rt_means$coarse,
+  rt_means$medium,
+  paired = TRUE
+)
+
+# Cohen's d: coarse vs fine
+cohens_d(
+  rt_means$coarse,
+  rt_means$fine,
+  paired = TRUE
+)
+
+# Cohen's d: medium vs fine
+cohens_d(
+  rt_means$medium,
+  rt_means$fine,
+  paired = TRUE
+)
+```
+
+```{r}
+acc_means <- df %>%
+  group_by(participant_id, difficulty) %>%
+  summarise(
+    accuracy = mean(correct),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = difficulty,
+    values_from = accuracy
+  )
+
+# Cohen's d: coarse vs medium
+cohens_d(
+  acc_means$coarse,
+  acc_means$medium,
+  paired = TRUE
+)
+
+# Cohen's d: coarse vs fine
+cohens_d(
+  acc_means$coarse,
+  acc_means$fine,
+  paired = TRUE
+)
+
+# Cohen's d: medium vs fine
+cohens_d(
+  acc_means$medium,
+  acc_means$fine,
+  paired = TRUE
+)
+```
+
+Generelt er effekterne meget store med brede konfidensinterval! Vi kan ikke rigtig sige så meget pga. N = 3
+
+#### Bayes factor analyse
+
+```{r}
+#BF analyse for RT og difficulty
+
+# coarse vs medium
+ttestBF(
+  x = rt_means$coarse,
+  y = rt_means$medium,
+  paired = TRUE
+)
+
+# coarse vs fine
+ttestBF(
+  x = rt_means$coarse,
+  y = rt_means$fine,
+  paired = TRUE
+)
+
+# medium vs fine
+ttestBF(
+  x = rt_means$medium,
+  y = rt_means$fine,
+  paired = TRUE
+)
+```
+
+BF10 for coarse vs medium: BF10 = 1.32\
+-\|\|- for coarse vs fine: BF10 = 2.43\
+-\|\|- for medium vs fine: BF10 = 4.06
+
+```{r}
+#BF analyse for acc og difficulty
+# coarse vs medium
+ttestBF(
+  x = acc_means$coarse,
+  y = acc_means$medium,
+  paired = TRUE
+)
+
+# coarse vs fine
+ttestBF(
+  x = acc_means$coarse,
+  y = acc_means$fine,
+  paired = TRUE
+)
+
+# medium vs fine
+ttestBF(
+  x = acc_means$medium,
+  y = acc_means$fine,
+  paired = TRUE
+)
+```
+
+BF10 for coarse vs medium: BF10 = 6.42\
+-\|\|- for coarse vs fine: BF10 = 4.70\
+-\|\|- for medium vs fine: BF10 = 3.50
+
+**Vi kigger på om outlier_position har en effekt gennem BayesFactor**
+
+```{r}
+#skaber dataframes Bayesfactor kan arbejde med
+rt_position_means <- df_rt %>%
+  
+  group_by(participant_id, outlier_position) %>%
+  
+  summarise(
+    mean_rt = mean(rt),
+    .groups = "drop"
+  ) %>%
+  
+  pivot_wider(
+    names_from = outlier_position,
+    values_from = mean_rt
+  )
+
+acc_position_means <- df %>%
+  
+  group_by(participant_id, outlier_position) %>%
+  
+  summarise(
+    accuracy = mean(correct),
+    .groups = "drop"
+  ) %>%
+  
+  pivot_wider(
+    names_from = outlier_position,
+    values_from = accuracy
+  )
+```
+
+```{r}
+#bayesfactor analyser
+
+# position 4 vs 5
+ttestBF(
+  x = rt_position_means$`4`,
+  y = rt_position_means$`5`,
+  paired = TRUE
+)
+
+# position 4 vs 6
+ttestBF(
+  x = rt_position_means$`4`,
+  y = rt_position_means$`6`,
+  paired = TRUE
+)
+
+# position 5 vs 6
+ttestBF(
+  x = rt_position_means$`5`,
+  y = rt_position_means$`6`,
+  paired = TRUE
+)
+```
+
+**reaktionstid**
+
+BF10 for 4 vs 5 = 0.54\
+BF10 for 4 vs 6 = 0.47\
+BF10 for 5 vs 6 = 1.66
+
+```{r}
+#bayesfactor for acc
+# position 4 vs 5
+ttestBF(
+  x = acc_position_means$`4`,
+  y = acc_position_means$`5`,
+  paired = TRUE
+)
+
+# position 4 vs 6
+ttestBF(
+  x = acc_position_means$`4`,
+  y = acc_position_means$`6`,
+  paired = TRUE
+)
+
+# position 5 vs 6
+ttestBF(
+  x = acc_position_means$`5`,
+  y = acc_position_means$`6`,
+  paired = TRUE
+)
+```
+
+**accuracy**
+
+BF10 for 4 vs 5 = 0.53\
+BF10 for 4 vs 6 = 1.54\
+BF10 for 5 vs 6 = 0.47
